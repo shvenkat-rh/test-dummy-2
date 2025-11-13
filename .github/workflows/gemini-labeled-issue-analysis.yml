@@ -369,6 +369,7 @@ jobs:
           # Read configuration
           REPOMIX_OUTPUT=$(jq -r '.repomix.output_path' ../triage.config.json)
           CUSTOM_PROMPT=$(jq -r '.analysis.custom_prompt_path' ../triage.config.json)
+          GEMINI_MODEL=$(jq -r '.gemini.model // ""' ../triage.config.json)
           
           # Build CLI arguments
           CLI_ARGS="--title \"$ISSUE_TITLE\" --description \"$ISSUE_DESCRIPTION\" --source-path \"$REPOMIX_OUTPUT\""
@@ -381,6 +382,14 @@ jobs:
             else
               echo "Warning: Custom prompt file not found: $CUSTOM_PROMPT, using default prompt"
             fi
+          fi
+          
+          # Add Gemini model if specified
+          if [ -n "$GEMINI_MODEL" ] && [ "$GEMINI_MODEL" != "null" ] && [ "$GEMINI_MODEL" != "" ]; then
+            CLI_ARGS="$CLI_ARGS --model \"$GEMINI_MODEL\""
+            echo "Using Gemini model: $GEMINI_MODEL"
+          else
+            echo "Using default Gemini model: gemini-2.0-flash-001"
           fi
           
           # Run the CLI analysis using environment variables
@@ -460,24 +469,21 @@ jobs:
           script: |
             const fs = require('fs');
             
-            // Read the analysis result
+            // Read the analysis result (already beautifully formatted)
             let analysisText;
             try {
               analysisText = fs.readFileSync('ai-triage/analysis_result.txt', 'utf8');
             } catch (error) {
               console.error('Error reading analysis file:', error);
-              analysisText = 'Failed to read analysis results.';
+              analysisText = '# ❌ Analysis Error\n\nFailed to read analysis results.';
             }
             
-            // Use plain text analysis result without formatting
-            const comment = analysisText;
-            
-            // Post the comment
+            // Post the beautifully formatted analysis
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: comment
+              body: analysisText
             });
             
             console.log('Analysis comment posted successfully');
