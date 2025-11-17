@@ -280,19 +280,36 @@ jobs:
           script: |
             const fs = require('fs');
             
-            // Get all open issues (excluding the current one)
+            // Get the current issue's creation date
+            const { data: currentIssue } = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+            
+            const currentIssueCreatedAt = new Date(currentIssue.created_at);
+            console.log(`Current issue #${context.issue.number} created at: ${currentIssueCreatedAt.toISOString()}`);
+            
+            // Get all open issues
             const { data: issues } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'open',
-              per_page: 100
+              per_page: 100,
+              sort: 'created',
+              direction: 'asc'  // Oldest first
             });
             
-            // Filter out pull requests and the current issue
-            const actualIssues = issues.filter(issue => 
-              !issue.pull_request && 
-              issue.number !== context.issue.number
-            );
+            // Filter: only issues created BEFORE the current issue (older issues only)
+            const actualIssues = issues.filter(issue => {
+              if (issue.pull_request) return false;
+              if (issue.number === context.issue.number) return false;
+              
+              const issueCreatedAt = new Date(issue.created_at);
+              return issueCreatedAt < currentIssueCreatedAt;
+            });
+            
+            console.log(`Fetched ${actualIssues.length} older issues for duplicate checking (created before ${currentIssueCreatedAt.toISOString()})`);
             
             // Create issues data file for duplicate_cli
             const issuesData = actualIssues.map(issue => ({
@@ -303,7 +320,7 @@ jobs:
             }));
             
             fs.writeFileSync('existing_issues.json', JSON.stringify(issuesData, null, 2));
-            console.log(`Fetched ${actualIssues.length} existing issues for duplicate checking`);
+            console.log(`Saved ${issuesData.length} issues to existing_issues.json`);
 
       - name: Check for duplicate issues
         id: duplicate-check
